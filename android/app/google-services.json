@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "990784231254",
+    "firebase_url": "https://temperatures-measurement-default-rtdb.firebaseio.com",
+    "project_id": "temperatures-measurement",
+    "storage_bucket": "temperatures-measurement.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:990784231254:android:f5c81173ce0510fc8168f7",
+        "android_client_info": {
+          "package_name": "com.example.temperature_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD8tebMweWIPVMVw5MY8-XbAMLosHqiHHI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -12,12 +13,36 @@ class _HomePageState extends State<HomePage> {
   final DatabaseReference _databaseRef = FirebaseDatabase.instance.ref();
   late Stream<DatabaseEvent> _sensorStream;
 
+  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+
   @override
   void initState() {
     super.initState();
-    // Escucha en tiempo real los cambios en el nodo 'sensors'
     _sensorStream = _databaseRef.child('sensors').onValue;
+    // Solicitar permisos para notificaciones
+    _firebaseMessaging.requestPermission();
+
+    // Suscribir el dispositivo al topic 'humidityAlert'
+    _firebaseMessaging.subscribeToTopic('humidityAlert');
+
+    // Escuchar mensajes cuando la app esté en primer plano
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('Mensaje recibido: ${message.notification?.title}');
+      // Aquí podrías mostrar una notificación local si lo deseas
+    });
+
+    // Configurar el manejo de mensajes cuando la app esté en segundo plano
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      print('Mensaje abierto: ${message.notification?.title}');
+    });
   }
+
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   // Escucha en tiempo real los cambios en el nodo 'sensors'
+
+  // }
 
   @override
   Widget build(BuildContext context) {

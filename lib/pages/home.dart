@@ -58,87 +58,90 @@ class _HomePageState extends State<HomePage> {
               return Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Tarjeta para la temperatura
-                      Card(
-                        color: Colors.white.withOpacity(0.8),
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            children: [
-                              const Icon(
-                                Icons.thermostat,
-                                color: Colors.orange,
-                                size: 50,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Temperature',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue.shade700,
+                  child: SingleChildScrollView(
+                    // Añadido SingleChildScrollView aquí
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Tarjeta para la temperatura
+                        Card(
+                          color: Colors.white.withOpacity(0.8),
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              children: [
+                                const Icon(
+                                  Icons.thermostat,
+                                  color: Colors.orange,
+                                  size: 50,
                                 ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                '$temperature °C',
-                                style: TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue.shade700,
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Temperature',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 5),
+                                Text(
+                                  '$temperature °C',
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Tarjeta para la humedad
-                      Card(
-                        color: Colors.white.withOpacity(0.8),
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            children: [
-                              const Icon(
-                                Icons.water_drop,
-                                color: Colors.blue,
-                                size: 50,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Humidity',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue.shade700,
+                        const SizedBox(height: 20),
+                        // Tarjeta para la humedad
+                        Card(
+                          color: Colors.white.withOpacity(0.8),
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              children: [
+                                const Icon(
+                                  Icons.water_drop,
+                                  color: Colors.blue,
+                                  size: 50,
                                 ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                '$humidity %',
-                                style: TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue.shade700,
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Humidity',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 5),
+                                Text(
+                                  '$humidity %',
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );

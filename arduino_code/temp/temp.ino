@@ -35,53 +35,62 @@ void setup() {
 }
 
 unsigned long lastAutoMeasurement = 0;
-const unsigned long AUTO_MEASURE_INTERVAL = 14400000UL; // 4 horas en milisegundos (4 * 60 * 60 * 1000)
+const unsigned long AUTO_MEASURE_INTERVAL = 3600000UL; // 1 hora en milisegundos (1 * 60 * 60 * 1000)
 
 void loop() {
   unsigned long currentMillis = millis();
-  
-  // Leer el disparador de Firebase (asumiendo getBool o getInt)
-  // Intentamos obtener el valor del trigger. Si es 1 o true, disparamos la medición.
-  int trigger = 0;
-  fb.getInt("commands/trigger_measurement", trigger); 
-  
-  bool shouldMeasure = (trigger == 1) || (currentMillis - lastAutoMeasurement >= AUTO_MEASURE_INTERVAL) || (lastAutoMeasurement == 0);
+
+  // Comprobar si ha llegado el momento de medir
+  bool shouldMeasure = (currentMillis - lastAutoMeasurement >= AUTO_MEASURE_INTERVAL) || (lastAutoMeasurement == 0);
 
   if (shouldMeasure) {
-    Serial.println("\nTomando medicion...");
-    
-    float celsius = thermo.getTemperature();
-    float humidity = thermo.getHumidity();
-
-    // Leer el valor del sensor ICQUANZX
-    humedadExtra = analogRead(humedadExtraPin);
-
-    // Convertir la lectura analógica del sensor ICQUANZX a un valor de humedad en porcentaje
-    float humedadExtraPorcentaje = map(humedadExtra, 0, 1023, 100, 0); 
-
-    fb.setFloat("sensors/temperature", celsius); // Establece el valor de temperatura en Firebase
-    fb.setFloat("sensors/humidity", humidity); // Establece el valor de humedad en Firebase
-    fb.setFloat("sensors/humidityExtra", humedadExtraPorcentaje); // Establece el valor de humedad extra en Firebase
-    
-    // Opcional: registrar una marca de tiempo en milisegundos del sistema para indicar que es una nueva lectura
-    fb.setInt("sensors/timestamp", currentMillis);
-
-    Serial.print("Temperatura: ");
-    Serial.print(celsius);
-    Serial.print(" C, Humedad: ");
-    Serial.print(humidity);
-    Serial.print(" %, Humedad Extra (Suelo): ");
-    Serial.print(humedadExtraPorcentaje);
-    Serial.println(" %");
-
-    // Limpiar el trigger en Firebase
-    if (trigger == 1) {
-      fb.setInt("commands/trigger_measurement", 0);
+    // Asegurar la conexión WiFi antes de proceder a la medición e interacción con Firebase
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi desconectado. Intentando reconectar...");
+      WiFi.disconnect();
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      
+      // Esperar hasta 10 segundos a que conecte para no bloquear infinitamente
+      int attempts = 0;
+      while (WiFi.status() != WL_CONNECTED && attempts < 10) {
+        delay(1000);
+        attempts++;
+      }
     }
-    
-    lastAutoMeasurement = currentMillis;
+
+    // Solo procedemos si la conexión WiFi está activa
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\nTomando medicion...");
+      
+      float celsius = thermo.getTemperature();
+      float humidity = thermo.getHumidity();
+
+      // Leer el valor del sensor ICQUANZX
+      humedadExtra = analogRead(humedadExtraPin);
+
+      // Convertir la lectura analógica del sensor ICQUANZX a un valor de humedad en porcentaje
+      float humedadExtraPorcentaje = map(humedadExtra, 0, 1023, 100, 0); 
+
+      fb.setFloat("sensors/temperature", celsius);
+      fb.setFloat("sensors/humidity", humidity);
+      fb.setFloat("sensors/humidityExtra", humedadExtraPorcentaje);
+      fb.setInt("sensors/timestamp", currentMillis);
+
+      Serial.print("Temperatura: ");
+      Serial.print(celsius);
+      Serial.print(" C, Humedad: ");
+      Serial.print(humidity);
+      Serial.print(" %, Humedad Extra (Suelo): ");
+      Serial.print(humedadExtraPorcentaje);
+      Serial.println(" %");
+
+      lastAutoMeasurement = currentMillis;
+    } else {
+      Serial.println("No se pudo conectar a WiFi. Se reintentará en el próximo ciclo.");
+    }
   }
   
-  delay(2000); // Esperar 2 segundos antes de volver a verificar el trigger
+  delay(1000); // Revisar el temporizador cada segundo
 }
+
 

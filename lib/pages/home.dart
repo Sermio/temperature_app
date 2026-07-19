@@ -25,6 +25,9 @@ class _HomePageState extends State<HomePage> {
   
   // Period filter: 'Semana' (last 7 entries) or 'Mes' (last 30 entries)
   String _selectedPeriod = 'Semana';
+  int? _showingTempTooltipIndex;
+  int? _showingHumTooltipIndex;
+  int? _showingAmpTooltipIndex;
 
   @override
   void initState() {
@@ -144,6 +147,33 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Map<String, dynamic>> get _filteredHistory {
+    if (_selectedPeriod == 'Horas') {
+      if (_detailedHistory.isEmpty) return [];
+      // Take the last 24 measurements (manual and automatic)
+      int limit = 24;
+      final recent = _detailedHistory.take(limit).toList();
+      // Reverse to chronological order (oldest first)
+      final chronological = recent.reversed.toList();
+      
+      return chronological.map((m) {
+        final temp = (m['temperature'] as num?)?.toDouble() ?? 0.0;
+        final hum = (m['humidity'] as num?)?.toDouble() ?? 0.0;
+        final ts = m['timestamp'] as int;
+        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+        // Format as "HH:mm" (e.g. 14:35)
+        final hourStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        return {
+          'date': hourStr,
+          'avg_temp': temp,
+          'min_temp': temp,
+          'max_temp': temp,
+          'avg_hum': hum,
+          'min_hum': hum,
+          'max_hum': hum,
+        };
+      }).toList();
+    }
+
     if (_history.isEmpty) return [];
     int limit = _selectedPeriod == 'Semana' ? 7 : 30;
     if (_history.length <= limit) {
@@ -576,6 +606,7 @@ class _HomePageState extends State<HomePage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _buildPeriodButton('Horas'),
                   _buildPeriodButton('Semana'),
                   _buildPeriodButton('Mes'),
                 ],
@@ -600,12 +631,15 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 24),
           
-          // Section 3: Thermal Amplitude Chart
-          _buildChartSection(
-            title: 'Amplitud Térmica Diaria (Máx - Mín)',
-            chart: _buildThermalAmplitudeChart(dataList: filteredData),
-            legend: _buildChartLegend(2),
-          ),
+          if (_selectedPeriod != 'Horas') ...[
+            const SizedBox(height: 24),
+            // Section 3: Thermal Amplitude Chart
+            _buildChartSection(
+              title: 'Amplitud Térmica Diaria (Máx - Mín)',
+              chart: _buildThermalAmplitudeChart(dataList: filteredData),
+              legend: _buildChartLegend(2),
+            ),
+          ],
         ],
       ),
     );
@@ -617,6 +651,9 @@ class _HomePageState extends State<HomePage> {
       onTap: () {
         setState(() {
           _selectedPeriod = period;
+          _showingTempTooltipIndex = null;
+          _showingHumTooltipIndex = null;
+          _showingAmpTooltipIndex = null;
         });
       },
       child: Container(
@@ -706,8 +743,144 @@ class _HomePageState extends State<HomePage> {
 
     Color mainColor = isTemp ? Colors.orangeAccent : Colors.cyanAccent;
 
+    double minY = 0.0;
+    double maxY = 100.0;
+    if (dataList.isNotEmpty) {
+      double minYVal = double.infinity;
+      double maxYVal = double.negativeInfinity;
+      for (var item in dataList) {
+        double min = isTemp ? (item['min_temp'] as num).toDouble() : (item['min_hum'] as num).toDouble();
+        double max = isTemp ? (item['max_temp'] as num).toDouble() : (item['max_hum'] as num).toDouble();
+        if (min < minYVal) minYVal = min;
+        if (max > maxYVal) maxYVal = max;
+      }
+      minY = (minYVal - 1.5).floorToDouble();
+      maxY = (maxYVal + 1.5).ceilToDouble();
+      if (!isTemp) {
+        if (minY < 0.0) minY = 0.0;
+        if (maxY > 100.0) maxY = 100.0;
+      }
+    }
+
+    final maxBar = LineChartBarData(
+      spots: maxSpots,
+      isCurved: true,
+      color: Colors.redAccent,
+      barWidth: 2,
+      isStrokeCapRound: true,
+      dotData: const FlDotData(show: true),
+    );
+    final avgBar = LineChartBarData(
+      spots: avgSpots,
+      isCurved: true,
+      color: mainColor,
+      barWidth: 3.5,
+      isStrokeCapRound: true,
+      dotData: const FlDotData(show: true),
+      belowBarData: BarAreaData(
+        show: true,
+        color: mainColor.withOpacity(0.08),
+      ),
+    );
+    final minBar = LineChartBarData(
+      spots: minSpots,
+      isCurved: true,
+      color: Colors.blueAccent,
+      barWidth: 2,
+      isStrokeCapRound: true,
+      dotData: const FlDotData(show: true),
+    );
+
+    List<ShowingTooltipIndicators> showingTooltips = [];
+    final activeIndex = isTemp ? _showingTempTooltipIndex : _showingHumTooltipIndex;
+    if (activeIndex != null && activeIndex < dataList.length) {
+      if (_selectedPeriod == 'Horas') {
+        showingTooltips = [
+          ShowingTooltipIndicators([
+            LineBarSpot(avgBar, 1, avgSpots[activeIndex]),
+          ])
+        ];
+      } else {
+        showingTooltips = [
+          ShowingTooltipIndicators([
+            LineBarSpot(maxBar, 0, maxSpots[activeIndex]),
+            LineBarSpot(avgBar, 1, avgSpots[activeIndex]),
+            LineBarSpot(minBar, 2, minSpots[activeIndex]),
+          ])
+        ];
+      }
+    }
+
     return LineChart(
       LineChartData(
+        minX: -0.5,
+        maxX: dataList.isEmpty ? 0.0 : dataList.length.toDouble() - 0.5,
+        minY: minY,
+        maxY: maxY,
+        showingTooltipIndicators: showingTooltips,
+        lineTouchData: LineTouchData(
+          handleBuiltInTouches: false,
+          touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
+            if (event is FlTapUpEvent) {
+              if (response != null && response.lineBarSpots != null && response.lineBarSpots!.isNotEmpty) {
+                final index = response.lineBarSpots!.first.spotIndex;
+                setState(() {
+                  if (isTemp) {
+                    _showingTempTooltipIndex = (_showingTempTooltipIndex == index) ? null : index;
+                  } else {
+                    _showingHumTooltipIndex = (_showingHumTooltipIndex == index) ? null : index;
+                  }
+                });
+              } else {
+                setState(() {
+                  if (isTemp) {
+                    _showingTempTooltipIndex = null;
+                  } else {
+                    _showingHumTooltipIndex = null;
+                  }
+                });
+              }
+            }
+          },
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (List<LineBarSpot> touchedSpots) {
+              final String unit = isTemp ? ' º' : ' %';
+              return touchedSpots.map((touchedSpot) {
+                if (_selectedPeriod == 'Horas') {
+                  if (touchedSpot.barIndex != 1) return null;
+                  final textStyle = TextStyle(
+                    color: touchedSpot.bar.color ?? Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  );
+                  return LineTooltipItem(
+                    '${touchedSpot.y.toStringAsFixed(1)}$unit',
+                    textStyle,
+                  );
+                }
+                
+                String labelPrefix = '';
+                if (touchedSpot.barIndex == 0) {
+                  labelPrefix = 'Max: ';
+                } else if (touchedSpot.barIndex == 1) {
+                  labelPrefix = 'Med: ';
+                } else if (touchedSpot.barIndex == 2) {
+                  labelPrefix = 'Min: ';
+                }
+
+                final textStyle = TextStyle(
+                  color: touchedSpot.bar.color ?? Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                );
+                return LineTooltipItem(
+                  '$labelPrefix${touchedSpot.y.toStringAsFixed(1)}$unit',
+                  textStyle,
+                );
+              }).toList();
+            },
+          ),
+        ),
         gridData: const FlGridData(show: true, drawVerticalLine: false),
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(
@@ -717,10 +890,17 @@ class _HomePageState extends State<HomePage> {
                 int index = value.toInt();
                 if (index >= 0 && index < dataList.length) {
                   final String dateStr = dataList[index]['date'] ?? '';
-                  final parts = dateStr.split('-');
-                  if (parts.length == 3) {
+                  if (dateStr.contains('-')) {
+                    final parts = dateStr.split('-');
+                    if (parts.length == 3) {
+                      return Text(
+                        '${parts[2]}/${parts[1]}',
+                        style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      );
+                    }
+                  } else {
                     return Text(
-                      '${parts[2]}/${parts[1]}',
+                      dateStr,
                       style: const TextStyle(color: Colors.white54, fontSize: 9),
                     );
                   }
@@ -754,37 +934,9 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         lineBarsData: [
-          // Max Line
-          LineChartBarData(
-            spots: maxSpots,
-            isCurved: true,
-            color: Colors.redAccent,
-            barWidth: 2,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: true),
-          ),
-          // Average Line
-          LineChartBarData(
-            spots: avgSpots,
-            isCurved: true,
-            color: mainColor,
-            barWidth: 3.5,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: true),
-            belowBarData: BarAreaData(
-              show: true,
-              color: mainColor.withOpacity(0.08),
-            ),
-          ),
-          // Min Line
-          LineChartBarData(
-            spots: minSpots,
-            isCurved: true,
-            color: Colors.blueAccent,
-            barWidth: 2,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: true),
-          ),
+          maxBar,
+          avgBar,
+          minBar,
         ],
       ),
     );
@@ -801,8 +953,84 @@ class _HomePageState extends State<HomePage> {
       amplitudeSpots.add(FlSpot(i.toDouble(), amplitude));
     }
 
+    double minY = 0.0;
+    double maxY = 20.0;
+    if (dataList.isNotEmpty) {
+      double minYVal = double.infinity;
+      double maxYVal = double.negativeInfinity;
+      for (var item in dataList) {
+        double max = (item['max_temp'] as num).toDouble();
+        double min = (item['min_temp'] as num).toDouble();
+        double amplitude = max - min;
+        if (amplitude < minYVal) minYVal = amplitude;
+        if (amplitude > maxYVal) maxYVal = amplitude;
+      }
+      minY = (minYVal - 1.0).floorToDouble();
+      if (minY < 0.0) minY = 0.0;
+      maxY = (maxYVal + 1.0).ceilToDouble();
+    }
+
+    final ampBar = LineChartBarData(
+      spots: amplitudeSpots,
+      isCurved: true,
+      color: Colors.purpleAccent,
+      barWidth: 3.5,
+      isStrokeCapRound: true,
+      dotData: const FlDotData(show: true),
+      belowBarData: BarAreaData(
+        show: true,
+        color: Colors.purpleAccent.withOpacity(0.08),
+      ),
+    );
+
+    List<ShowingTooltipIndicators> showingTooltips = [];
+    if (_showingAmpTooltipIndex != null && _showingAmpTooltipIndex! < amplitudeSpots.length) {
+      showingTooltips = [
+        ShowingTooltipIndicators([
+          LineBarSpot(ampBar, 0, amplitudeSpots[_showingAmpTooltipIndex!]),
+        ])
+      ];
+    }
+
     return LineChart(
       LineChartData(
+        minX: -0.5,
+        maxX: dataList.isEmpty ? 0.0 : dataList.length.toDouble() - 0.5,
+        minY: minY,
+        maxY: maxY,
+        showingTooltipIndicators: showingTooltips,
+        lineTouchData: LineTouchData(
+          handleBuiltInTouches: false,
+          touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
+            if (event is FlTapUpEvent) {
+              if (response != null && response.lineBarSpots != null && response.lineBarSpots!.isNotEmpty) {
+                final index = response.lineBarSpots!.first.spotIndex;
+                setState(() {
+                  _showingAmpTooltipIndex = (_showingAmpTooltipIndex == index) ? null : index;
+                });
+              } else {
+                setState(() {
+                  _showingAmpTooltipIndex = null;
+                });
+              }
+            }
+          },
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (List<LineBarSpot> touchedSpots) {
+              return touchedSpots.map((touchedSpot) {
+                final textStyle = TextStyle(
+                  color: touchedSpot.bar.color ?? Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                );
+                return LineTooltipItem(
+                  'Amp: ${touchedSpot.y.toStringAsFixed(1)} º',
+                  textStyle,
+                );
+              }).toList();
+            },
+          ),
+        ),
         gridData: const FlGridData(show: true, drawVerticalLine: false),
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(
@@ -812,10 +1040,17 @@ class _HomePageState extends State<HomePage> {
                 int index = value.toInt();
                 if (index >= 0 && index < dataList.length) {
                   final String dateStr = dataList[index]['date'] ?? '';
-                  final parts = dateStr.split('-');
-                  if (parts.length == 3) {
+                  if (dateStr.contains('-')) {
+                    final parts = dateStr.split('-');
+                    if (parts.length == 3) {
+                      return Text(
+                        '${parts[2]}/${parts[1]}',
+                        style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      );
+                    }
+                  } else {
                     return Text(
-                      '${parts[2]}/${parts[1]}',
+                      dateStr,
                       style: const TextStyle(color: Colors.white54, fontSize: 9),
                     );
                   }
@@ -849,18 +1084,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         lineBarsData: [
-          LineChartBarData(
-            spots: amplitudeSpots,
-            isCurved: true,
-            color: Colors.purpleAccent,
-            barWidth: 3.5,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: true),
-            belowBarData: BarAreaData(
-              show: true,
-              color: Colors.purpleAccent.withOpacity(0.08),
-            ),
-          ),
+          ampBar,
         ],
       ),
     );

@@ -621,6 +621,95 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildScrollableChartHelper({
+    required double minY,
+    required double maxY,
+    required int dataCount,
+    required LineChartData scrollableData,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minWidth = constraints.maxWidth;
+        final double availableWidthForScroll = minWidth - 40.0;
+        final double calculatedWidth = dataCount * 65.0;
+        final double finalWidth = calculatedWidth < availableWidthForScroll ? availableWidthForScroll : calculatedWidth;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Fixed Y-Axis
+            SizedBox(
+              width: 40,
+              child: LineChart(
+                LineChartData(
+                  minX: 0,
+                  maxX: 0,
+                  minY: minY,
+                  maxY: maxY,
+                  gridData: const FlGridData(show: false),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border(
+                      right: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 38,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toStringAsFixed(1),
+                            style: const TextStyle(color: Colors.white54, fontSize: 9),
+                          );
+                        },
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 20,
+                        getTitlesWidget: (value, meta) => const Text(''),
+                      ),
+                    ),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                ),
+              ),
+            ),
+            // Scrollable chart area
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: finalWidth,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 16.0),
+                    child: LineChart(
+                      scrollableData.copyWith(
+                        titlesData: scrollableData.titlesData.copyWith(
+                          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        ),
+                        borderData: FlBorderData(
+                          show: true,
+                          border: Border(
+                            bottom: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildChartSection({
     required String title,
     required Widget chart,
@@ -641,27 +730,9 @@ class _HomePageState extends State<HomePage> {
             style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          // Horizontal scrolling wrapper for the chart
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // Calculate custom width based on data count to allow horizontal scrolling
-              final dataCount = _filteredHistory.length;
-              final double minWidth = constraints.maxWidth;
-              final double calculatedWidth = dataCount * 65.0; // 65px per day point
-              final double finalWidth = calculatedWidth < minWidth ? minWidth : calculatedWidth;
-
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: finalWidth,
-                  height: 150,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 16.0), // Padding to make the last label readable
-                    child: chart,
-                  ),
-                ),
-              );
-            },
+          SizedBox(
+            height: 150,
+            child: chart,
           ),
           const SizedBox(height: 12),
           legend,
@@ -758,149 +829,154 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    return LineChart(
-      LineChartData(
-        minX: -0.5,
-        maxX: dataList.isEmpty ? 0.0 : dataList.length.toDouble() - 0.5,
-        minY: minY,
-        maxY: maxY,
-        showingTooltipIndicators: showingTooltips,
-        lineTouchData: LineTouchData(
-          handleBuiltInTouches: false,
-          touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
-            if (event is FlTapUpEvent) {
-              if (response != null && response.lineBarSpots != null && response.lineBarSpots!.isNotEmpty) {
-                final index = response.lineBarSpots!.first.spotIndex;
-                setState(() {
-                  if (isTemp) {
-                    _showingTempTooltipIndex = (_showingTempTooltipIndex == index) ? null : index;
-                  } else {
-                    _showingHumTooltipIndex = (_showingHumTooltipIndex == index) ? null : index;
-                  }
-                });
-              } else {
-                setState(() {
-                  if (isTemp) {
-                    _showingTempTooltipIndex = null;
-                  } else {
-                    _showingHumTooltipIndex = null;
-                  }
-                });
-              }
+    final chartData = LineChartData(
+      minX: -0.5,
+      maxX: dataList.isEmpty ? 0.0 : dataList.length.toDouble() - 0.5,
+      minY: minY,
+      maxY: maxY,
+      showingTooltipIndicators: showingTooltips,
+      lineTouchData: LineTouchData(
+        handleBuiltInTouches: false,
+        touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
+          if (event is FlTapUpEvent) {
+            if (response != null && response.lineBarSpots != null && response.lineBarSpots!.isNotEmpty) {
+              final index = response.lineBarSpots!.first.spotIndex;
+              setState(() {
+                if (isTemp) {
+                  _showingTempTooltipIndex = (_showingTempTooltipIndex == index) ? null : index;
+                } else {
+                  _showingHumTooltipIndex = (_showingHumTooltipIndex == index) ? null : index;
+                }
+              });
+            } else {
+              setState(() {
+                if (isTemp) {
+                  _showingTempTooltipIndex = null;
+                } else {
+                  _showingHumTooltipIndex = null;
+                }
+              });
             }
-          },
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (List<LineBarSpot> touchedSpots) {
-              final String unit = isTemp ? ' º' : ' %';
-              return touchedSpots.map((touchedSpot) {
-                if (_selectedPeriod == 'Horas') {
-                  if (touchedSpot.barIndex != 0) return null;
-                  final textStyle = TextStyle(
-                    color: touchedSpot.bar.color ?? Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  );
-                  return LineTooltipItem(
-                    '${touchedSpot.y.toStringAsFixed(1)}$unit',
-                    textStyle,
-                  );
-                }
-                
-                String labelPrefix = '';
-                if (touchedSpot.barIndex == 0) {
-                  labelPrefix = 'Max: ';
-                } else if (touchedSpot.barIndex == 1) {
-                  labelPrefix = 'Med: ';
-                } else if (touchedSpot.barIndex == 2) {
-                  labelPrefix = 'Min: ';
-                }
-
+          }
+        },
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipItems: (List<LineBarSpot> touchedSpots) {
+            final String unit = isTemp ? ' º' : ' %';
+            return touchedSpots.map((touchedSpot) {
+              if (_selectedPeriod == 'Horas') {
+                if (touchedSpot.barIndex != 0) return null;
                 final textStyle = TextStyle(
                   color: touchedSpot.bar.color ?? Colors.white,
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 );
                 return LineTooltipItem(
-                  '$labelPrefix${touchedSpot.y.toStringAsFixed(1)}$unit',
+                  '${touchedSpot.y.toStringAsFixed(1)}$unit',
                   textStyle,
                 );
-              }).toList();
+              }
+              
+              String labelPrefix = '';
+              if (touchedSpot.barIndex == 0) {
+                labelPrefix = 'Max: ';
+              } else if (touchedSpot.barIndex == 1) {
+                labelPrefix = 'Med: ';
+              } else if (touchedSpot.barIndex == 2) {
+                labelPrefix = 'Min: ';
+              }
+
+              final textStyle = TextStyle(
+                color: touchedSpot.bar.color ?? Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              );
+              return LineTooltipItem(
+                '$labelPrefix${touchedSpot.y.toStringAsFixed(1)}$unit',
+                textStyle,
+              );
+            }).toList();
+          },
+        ),
+      ),
+      gridData: const FlGridData(show: true, drawVerticalLine: false),
+      titlesData: FlTitlesData(
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 1.0,
+            getTitlesWidget: (value, meta) {
+              // Only draw label at exact integer positions (one per data point)
+              if (value != value.roundToDouble()) return const Text('');
+              int index = value.toInt();
+              if (index >= 0 && index < dataList.length) {
+                final item = dataList[index];
+                final String dateStr = item['date'] ?? '';
+                if (dateStr.contains('-')) {
+                  final parts = dateStr.split('-');
+                  if (parts.length == 3) {
+                    return Text(
+                      '${parts[2]}/${parts[1]}',
+                      style: const TextStyle(color: Colors.white54, fontSize: 9),
+                    );
+                  } else if (parts.length == 2) {
+                    if (parts[1].startsWith('W')) {
+                      return Text(
+                        _formatWeekLabel(item),
+                        style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      );
+                    } else {
+                      final yearShort = parts[0].substring(2);
+                      return Text(
+                        '${parts[1]}/$yearShort',
+                        style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      );
+                    }
+                  }
+                } else {
+                  return Text(
+                    dateStr,
+                    style: const TextStyle(color: Colors.white54, fontSize: 9),
+                  );
+                }
+              }
+              return const Text('');
+            },
+            reservedSize: 20,
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 38,
+            getTitlesWidget: (value, meta) {
+              return Text(
+                value.toStringAsFixed(1),
+                style: const TextStyle(color: Colors.white54, fontSize: 9),
+              );
             },
           ),
         ),
-        gridData: const FlGridData(show: true, drawVerticalLine: false),
-        titlesData: FlTitlesData(
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 1.0,
-              getTitlesWidget: (value, meta) {
-                // Only draw label at exact integer positions (one per data point)
-                if (value != value.roundToDouble()) return const Text('');
-                int index = value.toInt();
-                if (index >= 0 && index < dataList.length) {
-                  final item = dataList[index];
-                  final String dateStr = item['date'] ?? '';
-                  if (dateStr.contains('-')) {
-                    final parts = dateStr.split('-');
-                    if (parts.length == 3) {
-                      return Text(
-                        '${parts[2]}/${parts[1]}',
-                        style: const TextStyle(color: Colors.white54, fontSize: 9),
-                      );
-                    } else if (parts.length == 2) {
-                      if (parts[1].startsWith('W')) {
-                        return Text(
-                          _formatWeekLabel(item),
-                          style: const TextStyle(color: Colors.white54, fontSize: 9),
-                        );
-                      } else {
-                        final yearShort = parts[0].substring(2);
-                        return Text(
-                          '${parts[1]}/$yearShort',
-                          style: const TextStyle(color: Colors.white54, fontSize: 9),
-                        );
-                      }
-                    }
-                  } else {
-                    return Text(
-                      dateStr,
-                      style: const TextStyle(color: Colors.white54, fontSize: 9),
-                    );
-                  }
-                }
-                return const Text('');
-              },
-              reservedSize: 20,
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 38,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  value.toStringAsFixed(1),
-                  style: const TextStyle(color: Colors.white54, fontSize: 9),
-                );
-              },
-            ),
-          ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        // Explicit X and Y axis border lines
-        borderData: FlBorderData(
-          show: true,
-          border: Border(
-            left: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
-            bottom: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
-          ),
-        ),
-        lineBarsData: _selectedPeriod == 'Horas'
-            ? [avgBar]
-            : [maxBar, avgBar, minBar],
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
       ),
+      // Explicit X and Y axis border lines
+      borderData: FlBorderData(
+        show: true,
+        border: Border(
+          left: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
+          bottom: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
+        ),
+      ),
+      lineBarsData: _selectedPeriod == 'Horas'
+          ? [avgBar]
+          : [maxBar, avgBar, minBar],
+    );
+
+    return _buildScrollableChartHelper(
+      minY: minY,
+      maxY: maxY,
+      dataCount: dataList.length,
+      scrollableData: chartData,
     );
   }
 
@@ -954,118 +1030,123 @@ class _HomePageState extends State<HomePage> {
       ];
     }
 
-    return LineChart(
-      LineChartData(
-        minX: -0.5,
-        maxX: dataList.isEmpty ? 0.0 : dataList.length.toDouble() - 0.5,
-        minY: minY,
-        maxY: maxY,
-        showingTooltipIndicators: showingTooltips,
-        lineTouchData: LineTouchData(
-          handleBuiltInTouches: false,
-          touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
-            if (event is FlTapUpEvent) {
-              if (response != null && response.lineBarSpots != null && response.lineBarSpots!.isNotEmpty) {
-                final index = response.lineBarSpots!.first.spotIndex;
-                setState(() {
-                  _showingAmpTooltipIndex = (_showingAmpTooltipIndex == index) ? null : index;
-                });
-              } else {
-                setState(() {
-                  _showingAmpTooltipIndex = null;
-                });
-              }
+    final chartData = LineChartData(
+      minX: -0.5,
+      maxX: dataList.isEmpty ? 0.0 : dataList.length.toDouble() - 0.5,
+      minY: minY,
+      maxY: maxY,
+      showingTooltipIndicators: showingTooltips,
+      lineTouchData: LineTouchData(
+        handleBuiltInTouches: false,
+        touchCallback: (FlTouchEvent event, LineTouchResponse? response) {
+          if (event is FlTapUpEvent) {
+            if (response != null && response.lineBarSpots != null && response.lineBarSpots!.isNotEmpty) {
+              final index = response.lineBarSpots!.first.spotIndex;
+              setState(() {
+                _showingAmpTooltipIndex = (_showingAmpTooltipIndex == index) ? null : index;
+              });
+            } else {
+              setState(() {
+                _showingAmpTooltipIndex = null;
+              });
             }
+          }
+        },
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipItems: (List<LineBarSpot> touchedSpots) {
+            return touchedSpots.map((touchedSpot) {
+              final textStyle = TextStyle(
+                color: touchedSpot.bar.color ?? Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              );
+              return LineTooltipItem(
+                'Amp: ${touchedSpot.y.toStringAsFixed(1)} º',
+                textStyle,
+              );
+            }).toList();
           },
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (List<LineBarSpot> touchedSpots) {
-              return touchedSpots.map((touchedSpot) {
-                final textStyle = TextStyle(
-                  color: touchedSpot.bar.color ?? Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                );
-                return LineTooltipItem(
-                  'Amp: ${touchedSpot.y.toStringAsFixed(1)} º',
-                  textStyle,
-                );
-              }).toList();
+        ),
+      ),
+      gridData: const FlGridData(show: true, drawVerticalLine: false),
+      titlesData: FlTitlesData(
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 1.0,
+            getTitlesWidget: (value, meta) {
+              // Only draw label at exact integer positions (one per data point)
+              if (value != value.roundToDouble()) return const Text('');
+              int index = value.toInt();
+              if (index >= 0 && index < dataList.length) {
+                final item = dataList[index];
+                final String dateStr = item['date'] ?? '';
+                if (dateStr.contains('-')) {
+                  final parts = dateStr.split('-');
+                  if (parts.length == 3) {
+                    return Text(
+                      '${parts[2]}/${parts[1]}',
+                      style: const TextStyle(color: Colors.white54, fontSize: 9),
+                    );
+                  } else if (parts.length == 2) {
+                    if (parts[1].startsWith('W')) {
+                      return Text(
+                        _formatWeekLabel(item),
+                        style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      );
+                    } else {
+                      final yearShort = parts[0].substring(2);
+                      return Text(
+                        '${parts[1]}/$yearShort',
+                        style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      );
+                    }
+                  }
+                } else {
+                  return Text(
+                    dateStr,
+                    style: const TextStyle(color: Colors.white54, fontSize: 9),
+                  );
+                }
+              }
+              return const Text('');
+            },
+            reservedSize: 20,
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 38,
+            getTitlesWidget: (value, meta) {
+              return Text(
+                value.toStringAsFixed(1),
+                style: const TextStyle(color: Colors.white54, fontSize: 9),
+              );
             },
           ),
         ),
-        gridData: const FlGridData(show: true, drawVerticalLine: false),
-        titlesData: FlTitlesData(
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 1.0,
-              getTitlesWidget: (value, meta) {
-                // Only draw label at exact integer positions (one per data point)
-                if (value != value.roundToDouble()) return const Text('');
-                int index = value.toInt();
-                if (index >= 0 && index < dataList.length) {
-                  final item = dataList[index];
-                  final String dateStr = item['date'] ?? '';
-                  if (dateStr.contains('-')) {
-                    final parts = dateStr.split('-');
-                    if (parts.length == 3) {
-                      return Text(
-                        '${parts[2]}/${parts[1]}',
-                        style: const TextStyle(color: Colors.white54, fontSize: 9),
-                      );
-                    } else if (parts.length == 2) {
-                      if (parts[1].startsWith('W')) {
-                        return Text(
-                          _formatWeekLabel(item),
-                          style: const TextStyle(color: Colors.white54, fontSize: 9),
-                        );
-                      } else {
-                        final yearShort = parts[0].substring(2);
-                        return Text(
-                          '${parts[1]}/$yearShort',
-                          style: const TextStyle(color: Colors.white54, fontSize: 9),
-                        );
-                      }
-                    }
-                  } else {
-                    return Text(
-                      dateStr,
-                      style: const TextStyle(color: Colors.white54, fontSize: 9),
-                    );
-                  }
-                }
-                return const Text('');
-              },
-              reservedSize: 20,
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 38,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  value.toStringAsFixed(1),
-                  style: const TextStyle(color: Colors.white54, fontSize: 9),
-                );
-              },
-            ),
-          ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        // Explicit X and Y axis border lines
-        borderData: FlBorderData(
-          show: true,
-          border: Border(
-            left: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
-            bottom: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
-          ),
-        ),
-        lineBarsData: [
-          ampBar,
-        ],
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
       ),
+      // Explicit X and Y axis border lines
+      borderData: FlBorderData(
+        show: true,
+        border: Border(
+          left: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
+          bottom: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
+        ),
+      ),
+      lineBarsData: [
+        ampBar,
+      ],
+    );
+
+    return _buildScrollableChartHelper(
+      minY: minY,
+      maxY: maxY,
+      dataCount: dataList.length,
+      scrollableData: chartData,
     );
   }
 

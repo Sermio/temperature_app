@@ -49,6 +49,29 @@ class DatabaseHelper {
     return await db.insert('measurements', row);
   }
 
+  /// Inserts a measurement only if a row with the same timestamp doesn't exist.
+  /// Used when restoring from Firestore to avoid duplicates.
+  Future<void> insertMeasurementIfNotExists(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    final ts = row['timestamp'] as int;
+    final existing = await db.query(
+      'measurements',
+      where: 'timestamp = ?',
+      whereArgs: [ts],
+      limit: 1,
+    );
+    if (existing.isEmpty) {
+      await db.insert('measurements', row);
+    }
+  }
+
+  /// Returns the total number of measurements stored locally.
+  Future<int> countMeasurements() async {
+    final db = await instance.database;
+    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM measurements');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
   Future<List<Map<String, dynamic>>> getAllMeasurements() async {
     final db = await instance.database;
     return await db.query('measurements', orderBy: 'timestamp ASC');
@@ -76,7 +99,63 @@ class DatabaseHelper {
         MIN(humidity) as min_hum,
         MAX(humidity) as max_hum
       FROM measurements
-      GROUP BY date
+      GROUP BY date(timestamp / 1000, 'unixepoch', 'localtime')
+      ORDER BY date ASC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getHourlyAverages() async {
+    final db = await instance.database;
+    // Agrupa por hora del dia (00:00 a 23:00)
+    return await db.rawQuery('''
+      SELECT 
+        strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') || ':00' as date,
+        AVG(temperature) as avg_temp,
+        MIN(temperature) as min_temp,
+        MAX(temperature) as max_temp,
+        AVG(humidity) as avg_hum,
+        MIN(humidity) as min_hum,
+        MAX(humidity) as max_hum
+      FROM measurements
+      GROUP BY strftime('%H', timestamp / 1000, 'unixepoch', 'localtime')
+      ORDER BY date ASC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getWeeklyAverages() async {
+    final db = await instance.database;
+    // Agrupa por año y número de semana (YYYY-Www)
+    return await db.rawQuery('''
+      SELECT 
+        strftime('%Y-W%W', timestamp / 1000, 'unixepoch', 'localtime') as date,
+        MIN(date(timestamp / 1000, 'unixepoch', 'localtime')) as min_date,
+        MAX(date(timestamp / 1000, 'unixepoch', 'localtime')) as max_date,
+        AVG(temperature) as avg_temp,
+        MIN(temperature) as min_temp,
+        MAX(temperature) as max_temp,
+        AVG(humidity) as avg_hum,
+        MIN(humidity) as min_hum,
+        MAX(humidity) as max_hum
+      FROM measurements
+      GROUP BY strftime('%Y-W%W', timestamp / 1000, 'unixepoch', 'localtime')
+      ORDER BY date ASC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getMonthlyAverages() async {
+    final db = await instance.database;
+    // Agrupa por año y mes (YYYY-MM)
+    return await db.rawQuery('''
+      SELECT 
+        strftime('%Y-%m', timestamp / 1000, 'unixepoch', 'localtime') as date,
+        AVG(temperature) as avg_temp,
+        MIN(temperature) as min_temp,
+        MAX(temperature) as max_temp,
+        AVG(humidity) as avg_hum,
+        MIN(humidity) as min_hum,
+        MAX(humidity) as max_hum
+      FROM measurements
+      GROUP BY strftime('%Y-%m', timestamp / 1000, 'unixepoch', 'localtime')
       ORDER BY date ASC
     ''');
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:temperature_app/data/database_helper.dart';
+import 'package:temperature_app/data/sync_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -19,12 +20,15 @@ class _HomePageState extends State<HomePage> {
   bool _manualMeasurementRequested = false;
   int? _lastTimestamp;
   
-  List<Map<String, dynamic>> _history = [];
+  List<Map<String, dynamic>> _hourlyAverages = [];
+  List<Map<String, dynamic>> _dailyAverages = [];
+  List<Map<String, dynamic>> _weeklyAverages = [];
+  List<Map<String, dynamic>> _monthlyAverages = [];
   List<Map<String, dynamic>> _detailedHistory = [];
   int _selectedIndex = 0;
   
-  // Period filter: 'Semana' (last 7 entries) or 'Mes' (last 30 entries)
-  String _selectedPeriod = 'Semana';
+  // Period filter: 'Horas', 'Diaria', 'Semana' or 'Mes'
+  String _selectedPeriod = 'Diaria';
   int? _showingTempTooltipIndex;
   int? _showingHumTooltipIndex;
   int? _showingAmpTooltipIndex;
@@ -32,7 +36,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    // Initialize local history, then seed from Firestore if needed & schedule daily sync
+    _loadHistory().then((_) => SyncService.initialize());
     
     // Listen for database changes to update real-time and save to local SQLite
     _databaseRef.child('sensors').onValue.listen((DatabaseEvent event) async {
@@ -86,6 +91,8 @@ class _HomePageState extends State<HomePage> {
             debugPrint('Inserted measurement successfully with ID: $id');
             
             _loadHistory();
+            // Trigger daily sync check after a new measurement is recorded
+            SyncService.syncNowIfNeeded();
           } else {
             debugPrint('Timestamp $timestamp matches _lastTimestamp $_lastTimestamp. Skipping insert.');
           }
@@ -127,59 +134,33 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadHistory() async {
-    final historyData = await DatabaseHelper.instance.getDailyAverages();
+    final hourlyData = await DatabaseHelper.instance.getHourlyAverages();
+    final dailyData = await DatabaseHelper.instance.getDailyAverages();
+    final weeklyData = await DatabaseHelper.instance.getWeeklyAverages();
+    final monthlyData = await DatabaseHelper.instance.getMonthlyAverages();
     final detailedData = await DatabaseHelper.instance.getDetailedMeasurements();
     setState(() {
-      _history = historyData;
+      _hourlyAverages = hourlyData;
+      _dailyAverages = dailyData;
+      _weeklyAverages = weeklyData;
+      _monthlyAverages = monthlyData;
       _detailedHistory = detailedData;
     });
   }
 
-  Future<void> _triggerMeasurement() async {
-    setState(() {
-      _isMeasuring = true;
-      _manualMeasurementRequested = true;
-    });
-    // Set trigger to 1 in Firebase RTDB so Arduino runs the measurement
-    await _databaseRef.child('commands').update({
-      'trigger_measurement': 1,
-    });
-  }
+
 
   List<Map<String, dynamic>> get _filteredHistory {
     if (_selectedPeriod == 'Horas') {
-      if (_detailedHistory.isEmpty) return [];
-      // Take the last 24 measurements (manual and automatic)
-      int limit = 24;
-      final recent = _detailedHistory.take(limit).toList();
-      // Reverse to chronological order (oldest first)
-      final chronological = recent.reversed.toList();
-      
-      return chronological.map((m) {
-        final temp = (m['temperature'] as num?)?.toDouble() ?? 0.0;
-        final hum = (m['humidity'] as num?)?.toDouble() ?? 0.0;
-        final ts = m['timestamp'] as int;
-        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
-        // Format as "HH:mm" (e.g. 14:35)
-        final hourStr = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-        return {
-          'date': hourStr,
-          'avg_temp': temp,
-          'min_temp': temp,
-          'max_temp': temp,
-          'avg_hum': hum,
-          'min_hum': hum,
-          'max_hum': hum,
-        };
-      }).toList();
+      return _hourlyAverages;
+    } else if (_selectedPeriod == 'Diaria') {
+      return _dailyAverages;
+    } else if (_selectedPeriod == 'Semana') {
+      return _weeklyAverages;
+    } else if (_selectedPeriod == 'Mes') {
+      return _monthlyAverages;
     }
-
-    if (_history.isEmpty) return [];
-    int limit = _selectedPeriod == 'Semana' ? 7 : 30;
-    if (_history.length <= limit) {
-      return _history;
-    }
-    return _history.sublist(_history.length - limit);
+    return [];
   }
 
   String _formatTimestamp(int timestamp) {
@@ -191,6 +172,34 @@ class _HomePageState extends State<HomePage> {
     final month = dt.month.toString().padLeft(2, '0');
     final year = dt.year;
     return '$hour:$minute:$second - $day/$month/$year';
+  }
+
+  /// Formats a weekly label as the full calendar week range, e.g. "13-19 Jul"
+  /// or "28 Jul-3 Ago" for cross-month weeks.
+  /// Uses min_date (any day in the week) to compute the Monday and Sunday
+  /// of that calendar week.
+  String _formatWeekLabel(Map<String, dynamic> item) {
+    const months = [
+      'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+      'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
+    ];
+    final minDateStr = item['min_date'] as String?;
+    if (minDateStr == null) return item['date'] ?? '';
+    try {
+      final dateInWeek = DateTime.parse(minDateStr);
+      // weekday: 1 = Monday … 7 = Sunday
+      final monday = dateInWeek.subtract(Duration(days: dateInWeek.weekday - 1));
+      final sunday = monday.add(const Duration(days: 6));
+      final startMonth = months[monday.month - 1];
+      final endMonth   = months[sunday.month - 1];
+      if (monday.month == sunday.month) {
+        return '${monday.day}-${sunday.day} $endMonth';
+      } else {
+        return '${monday.day} $startMonth-${sunday.day} $endMonth';
+      }
+    } catch (_) {
+      return item['date'] ?? '';
+    }
   }
 
   @override
@@ -289,9 +298,6 @@ class _HomePageState extends State<HomePage> {
                 gradientColors: [Colors.cyan.shade800.withOpacity(0.15), Colors.cyan.shade500.withOpacity(0.05)],
               ),
             ],
-            const SizedBox(height: 50),
-            // Measure Button
-            _buildMeasureButton(),
           ],
         ),
       ),
@@ -363,61 +369,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildMeasureButton() {
-    return InkWell(
-      onTap: _isMeasuring ? null : _triggerMeasurement,
-      borderRadius: BorderRadius.circular(30),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-        decoration: BoxDecoration(
-          gradient: _isMeasuring
-              ? const LinearGradient(colors: [Colors.grey, Colors.black26])
-              : const LinearGradient(
-                  colors: [Colors.cyan, Colors.blueAccent],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            if (!_isMeasuring)
-              BoxShadow(
-                color: Colors.cyan.withOpacity(0.4),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
-              )
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_isMeasuring) ...[
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Midiendo...',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ] else ...[
-              const Icon(Icons.refresh_rounded, color: Colors.white),
-              const SizedBox(width: 12),
-              const Text(
-                'Medir Ahora',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ]
-          ],
-        ),
-      ),
-    );
-  }
+
 
   Widget _buildHistoryListTab() {
     if (_detailedHistory.isEmpty) {
@@ -548,7 +500,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildStatsTab() {
-    if (_history.isEmpty) {
+    if (_detailedHistory.isEmpty) {
       return Container(
         color: const Color(0xFF0F172A),
         child: Center(
@@ -566,16 +518,6 @@ class _HomePageState extends State<HomePage> {
                 'Las mediciones periódicas se guardarán aquí.',
                 style: TextStyle(color: Colors.white38, fontSize: 14),
               ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: _triggerMeasurement,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Tomar Medida'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyan,
-                  foregroundColor: Colors.white,
-                ),
-              )
             ],
           ),
         ),
@@ -595,7 +537,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 12),
           
-          // Period Selector (Semana / Mes)
+          // Period Selector (Horas / Diaria / Semana / Mes)
           Center(
             child: Container(
               decoration: BoxDecoration(
@@ -607,6 +549,7 @@ class _HomePageState extends State<HomePage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildPeriodButton('Horas'),
+                  _buildPeriodButton('Diaria'),
                   _buildPeriodButton('Semana'),
                   _buildPeriodButton('Mes'),
                 ],
@@ -617,7 +560,9 @@ class _HomePageState extends State<HomePage> {
           
           // Section 1: Temperature Chart
           _buildChartSection(
-            title: 'Temperatura (Mín / Máx / Med)',
+            title: _selectedPeriod == 'Horas'
+                ? 'Temperatura (Media por hora)'
+                : 'Temperatura (Mín / Máx / Med)',
             chart: _buildTripleLineChart(isTemp: true, dataList: filteredData),
             legend: _buildChartLegend(0),
           ),
@@ -625,7 +570,9 @@ class _HomePageState extends State<HomePage> {
           
           // Section 2: Humidity Chart
           _buildChartSection(
-            title: 'Humedad (Mín / Máx / Med)',
+            title: _selectedPeriod == 'Horas'
+                ? 'Humedad (Media por hora)'
+                : 'Humedad (Mín / Máx / Med)',
             chart: _buildTripleLineChart(isTemp: false, dataList: filteredData),
             legend: _buildChartLegend(1),
           ),
@@ -797,7 +744,7 @@ class _HomePageState extends State<HomePage> {
       if (_selectedPeriod == 'Horas') {
         showingTooltips = [
           ShowingTooltipIndicators([
-            LineBarSpot(avgBar, 1, avgSpots[activeIndex]),
+            LineBarSpot(avgBar, 0, avgSpots[activeIndex]),
           ])
         ];
       } else {
@@ -847,7 +794,7 @@ class _HomePageState extends State<HomePage> {
               final String unit = isTemp ? ' º' : ' %';
               return touchedSpots.map((touchedSpot) {
                 if (_selectedPeriod == 'Horas') {
-                  if (touchedSpot.barIndex != 1) return null;
+                  if (touchedSpot.barIndex != 0) return null;
                   final textStyle = TextStyle(
                     color: touchedSpot.bar.color ?? Colors.white,
                     fontWeight: FontWeight.bold,
@@ -886,10 +833,14 @@ class _HomePageState extends State<HomePage> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
+              interval: 1.0,
               getTitlesWidget: (value, meta) {
+                // Only draw label at exact integer positions (one per data point)
+                if (value != value.roundToDouble()) return const Text('');
                 int index = value.toInt();
                 if (index >= 0 && index < dataList.length) {
-                  final String dateStr = dataList[index]['date'] ?? '';
+                  final item = dataList[index];
+                  final String dateStr = item['date'] ?? '';
                   if (dateStr.contains('-')) {
                     final parts = dateStr.split('-');
                     if (parts.length == 3) {
@@ -897,6 +848,19 @@ class _HomePageState extends State<HomePage> {
                         '${parts[2]}/${parts[1]}',
                         style: const TextStyle(color: Colors.white54, fontSize: 9),
                       );
+                    } else if (parts.length == 2) {
+                      if (parts[1].startsWith('W')) {
+                        return Text(
+                          _formatWeekLabel(item),
+                          style: const TextStyle(color: Colors.white54, fontSize: 9),
+                        );
+                      } else {
+                        final yearShort = parts[0].substring(2);
+                        return Text(
+                          '${parts[1]}/$yearShort',
+                          style: const TextStyle(color: Colors.white54, fontSize: 9),
+                        );
+                      }
                     }
                   } else {
                     return Text(
@@ -933,11 +897,9 @@ class _HomePageState extends State<HomePage> {
             bottom: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5),
           ),
         ),
-        lineBarsData: [
-          maxBar,
-          avgBar,
-          minBar,
-        ],
+        lineBarsData: _selectedPeriod == 'Horas'
+            ? [avgBar]
+            : [maxBar, avgBar, minBar],
       ),
     );
   }
@@ -1036,10 +998,14 @@ class _HomePageState extends State<HomePage> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
+              interval: 1.0,
               getTitlesWidget: (value, meta) {
+                // Only draw label at exact integer positions (one per data point)
+                if (value != value.roundToDouble()) return const Text('');
                 int index = value.toInt();
                 if (index >= 0 && index < dataList.length) {
-                  final String dateStr = dataList[index]['date'] ?? '';
+                  final item = dataList[index];
+                  final String dateStr = item['date'] ?? '';
                   if (dateStr.contains('-')) {
                     final parts = dateStr.split('-');
                     if (parts.length == 3) {
@@ -1047,6 +1013,19 @@ class _HomePageState extends State<HomePage> {
                         '${parts[2]}/${parts[1]}',
                         style: const TextStyle(color: Colors.white54, fontSize: 9),
                       );
+                    } else if (parts.length == 2) {
+                      if (parts[1].startsWith('W')) {
+                        return Text(
+                          _formatWeekLabel(item),
+                          style: const TextStyle(color: Colors.white54, fontSize: 9),
+                        );
+                      } else {
+                        final yearShort = parts[0].substring(2);
+                        return Text(
+                          '${parts[1]}/$yearShort',
+                          style: const TextStyle(color: Colors.white54, fontSize: 9),
+                        );
+                      }
                     }
                   } else {
                     return Text(
@@ -1096,6 +1075,19 @@ class _HomePageState extends State<HomePage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           _buildLegendItem(color: Colors.purpleAccent, text: 'Amplitud (Máx - Mín)'),
+        ],
+      );
+    }
+
+    // For 'Horas' period only show the average
+    if (_selectedPeriod == 'Horas') {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildLegendItem(
+            color: index == 0 ? Colors.orangeAccent : Colors.cyanAccent,
+            text: 'Media por hora',
+          ),
         ],
       );
     }

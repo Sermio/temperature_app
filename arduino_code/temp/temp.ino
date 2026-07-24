@@ -44,19 +44,23 @@ void loop() {
   bool shouldMeasure = (currentMillis - lastAutoMeasurement >= AUTO_MEASURE_INTERVAL) || (lastAutoMeasurement == 0);
 
   if (shouldMeasure) {
-    // Asegurar la conexión WiFi antes de proceder a la medición e interacción con Firebase
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi desconectado. Intentando reconectar...");
+    // SIEMPRE reiniciar la conexión WiFi antes de medir para evitar conexiones fantasma (congelamiento)
+    Serial.println("Reiniciando WiFi para asegurar conexion fresca con Firebase...");
+    if (WiFi.status() == WL_CONNECTED) {
       WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-      
-      // Esperar hasta 10 segundos a que conecte para no bloquear infinitamente
-      int attempts = 0;
-      while (WiFi.status() != WL_CONNECTED && attempts < 10) {
-        delay(1000);
-        attempts++;
-      }
+      delay(1000);
     }
+    
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    
+    // Esperar hasta 15 segundos a que conecte para no bloquear infinitamente
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 15) {
+      delay(1000);
+      attempts++;
+      Serial.print(".");
+    }
+    Serial.println();
 
     // Solo procedemos si la conexión WiFi está activa
     if (WiFi.status() == WL_CONNECTED) {
@@ -84,10 +88,12 @@ void loop() {
       Serial.print(humedadExtraPorcentaje);
       Serial.println(" %");
 
-      lastAutoMeasurement = currentMillis;
     } else {
       Serial.println("No se pudo conectar a WiFi. Se reintentará en el próximo ciclo.");
     }
+    
+    // Actualizamos el temporizador siempre, para no quedarnos en bucle infinito
+    lastAutoMeasurement = currentMillis;
   }
   
   delay(1000); // Revisar el temporizador cada segundo

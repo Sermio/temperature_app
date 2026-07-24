@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:temperature_app/data/database_helper.dart';
 import 'package:temperature_app/data/sync_service.dart';
 
@@ -19,6 +20,7 @@ class _HomePageState extends State<HomePage> {
   bool _isMeasuring = false;
   bool _manualMeasurementRequested = false;
   int? _lastTimestamp;
+  bool _isTimestampLoaded = false;
   
   List<Map<String, dynamic>> _hourlyAverages = [];
   List<Map<String, dynamic>> _dailyAverages = [];
@@ -36,11 +38,15 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _initPersistentTimestamp();
     // Initialize local history, then seed from Firestore if needed & schedule daily sync
     _loadHistory().then((_) => SyncService.initialize());
     
     // Listen for database changes to update real-time and save to local SQLite
     _databaseRef.child('sensors').onValue.listen((DatabaseEvent event) async {
+      while (!_isTimestampLoaded) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
       debugPrint('Firebase sensors event received: ${event.snapshot.value}');
       if (event.snapshot.value != null) {
         final data = Map<dynamic, dynamic>.from(event.snapshot.value as Map);
@@ -62,12 +68,16 @@ class _HomePageState extends State<HomePage> {
           if (_lastTimestamp == null) {
             debugPrint('Initializing _lastTimestamp to $timestamp on startup, skipping insert.');
             _lastTimestamp = timestamp;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt('last_arduino_timestamp', timestamp);
             return;
           }
 
           if (timestamp != _lastTimestamp) {
             debugPrint('New timestamp detected ($timestamp != $_lastTimestamp). Inserting measurement...');
             _lastTimestamp = timestamp;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt('last_arduino_timestamp', timestamp);
             
             final bool wasManual = _manualMeasurementRequested || _isMeasuring;
             _manualMeasurementRequested = false;
@@ -126,6 +136,16 @@ class _HomePageState extends State<HomePage> {
         });
       }
     });
+  }
+
+  Future<void> _initPersistentTimestamp() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _lastTimestamp = prefs.getInt('last_arduino_timestamp');
+        _isTimestampLoaded = true;
+      });
+    }
   }
 
   @override
